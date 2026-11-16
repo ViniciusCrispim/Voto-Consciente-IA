@@ -1,5 +1,6 @@
 package br.com.votoconsciente.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.channel.ChannelOption;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
@@ -40,6 +41,13 @@ public class WebClientConfig {
 
     @Value("${apis.transparencia.api-key:}")
     private String transparenciaApiKey;
+
+    @Bean
+    public ObjectMapper objectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.findAndRegisterModules();
+        return mapper;
+    }
 
     /**
      * Buffer de 16MB para respostas grandes das APIs externas.
