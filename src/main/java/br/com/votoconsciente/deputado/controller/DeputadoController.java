@@ -2,7 +2,7 @@ package br.com.votoconsciente.deputado.controller;
 
 import br.com.votoconsciente.camara.dto.DespesaDTO;
 import br.com.votoconsciente.camara.dto.ProposicaoDTO;
-import br.com.votoconsciente.camara.dto.VotacaoDTO;
+import br.com.votoconsciente.camara.dto.VotoParlamentarDTO;
 import br.com.votoconsciente.deputado.dto.DeputadoResponseDTO;
 import br.com.votoconsciente.deputado.service.DeputadoService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -89,9 +89,9 @@ public class DeputadoController {
     }
 
     @GetMapping("/{camaraId}/votacoes")
-    @Operation(summary = "Histórico de votações",
-               description = "Retorna as votações nominais do deputado.")
-    public ResponseEntity<List<VotacaoDTO>> buscarVotacoes(
+    @Operation(summary = "Histórico de votações nominais",
+               description = "Retorna como o deputado votou (Sim/Não/Abstenção/Obstrução) nas votações nominais recentes.")
+    public ResponseEntity<List<VotoParlamentarDTO>> buscarVotacoes(
             @PathVariable Long camaraId
     ) {
         return ResponseEntity.ok(deputadoService.buscarVotacoes(camaraId));

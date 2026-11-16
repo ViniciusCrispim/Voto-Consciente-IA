@@ -7,8 +7,8 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
-import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -28,10 +28,6 @@ public class CamaraApiClient {
 
     /**
      * Lista todos os deputados de uma legislatura.
-     *
-     * @param idLegislatura número da legislatura (ex: 57 para 2023-2027)
-     * @param pagina        número da página (começa em 1)
-     * @param itensPorPagina máximo de 100
      */
     public List<DeputadoResumoDTO> listarDeputados(Integer idLegislatura, int pagina, int itensPorPagina) {
         log.debug("Buscando deputados na Câmara: legislatura={}, pagina={}", idLegislatura, pagina);
@@ -77,10 +73,6 @@ public class CamaraApiClient {
 
     /**
      * Busca as despesas com cota parlamentar de um deputado.
-     *
-     * @param id   ID do deputado
-     * @param ano  Ano de referência (null = ano atual)
-     * @param mes  Mês de referência (null = todos)
      */
     public List<DespesaDTO> buscarDespesas(Long id, Integer ano, Integer mes) {
         log.debug("Buscando despesas do deputado {} (ano={}, mes={})", id, ano, mes);
@@ -89,7 +81,9 @@ public class CamaraApiClient {
                     .uri(uriBuilder -> {
                         var builder = uriBuilder.path("/deputados/{id}/despesas")
                                 .queryParam("itens", 100)
-                                .queryParam("pagina", 1);
+                                .queryParam("pagina", 1)
+                                .queryParam("ordem", "DESC")
+                                .queryParam("ordenarPor", "dataDocumento");
                         if (ano != null) builder.queryParam("ano", ano);
                         if (mes != null) builder.queryParam("mes", mes);
                         return builder.build(id);
@@ -106,26 +100,75 @@ public class CamaraApiClient {
     }
 
     /**
-     * Busca o histórico de votações nominais de um deputado.
+     * Lista as votações mais recentes da Câmara dos Deputados.
      */
-    public List<VotacaoDTO> buscarVotacoes(Long id) {
-        log.debug("Buscando votações do deputado {}", id);
+    public List<VotacaoDTO> listarVotacoesRecentes(int itens) {
+        log.debug("Buscando {} votações mais recentes da Câmara", itens);
         try {
             ApiWrapper<VotacaoDTO> response = webClient.get()
                     .uri(uriBuilder -> uriBuilder
-                            .path("/deputados/{id}/votacoes")
-                            .queryParam("itens", 100)
-                            .queryParam("pagina", 1)
-                            .build(id))
+                            .path("/votacoes")
+                            .queryParam("itens", itens)
+                            .queryParam("ordem", "DESC")
+                            .queryParam("ordenarPor", "dataHoraRegistro")
+                            .build())
                     .retrieve()
                     .bodyToMono(new ParameterizedTypeReference<ApiWrapper<VotacaoDTO>>() {})
                     .block();
 
             return response != null && response.getDados() != null ? response.getDados() : List.of();
         } catch (WebClientResponseException e) {
-            log.error("Erro ao buscar votações do deputado {}: status={}", id, e.getStatusCode());
+            log.error("Erro ao listar votações da Câmara: status={}", e.getStatusCode());
             return List.of();
         }
+    }
+
+    /**
+     * Busca os votos nominais de uma votação específica.
+     */
+    public List<VotoRegistroDTO> buscarVotosDeVotacao(String idVotacao) {
+        log.debug("Buscando votos nominais da votação {}", idVotacao);
+        try {
+            ApiWrapper<VotoRegistroDTO> response = webClient.get()
+                    .uri("/votacoes/{id}/votos", idVotacao)
+                    .retrieve()
+                    .bodyToMono(new ParameterizedTypeReference<ApiWrapper<VotoRegistroDTO>>() {})
+                    .block();
+
+            return response != null && response.getDados() != null ? response.getDados() : List.of();
+        } catch (WebClientResponseException e) {
+            // Muitas votações são simbólicas e não possuem votos nominais
+            log.debug("Votação {} não possui votos nominais registrados: status={}", idVotacao, e.getStatusCode());
+            return List.of();
+        }
+    }
+
+    /**
+     * Busca o histórico de posicionamento do deputado nas votações nominais recentes.
+     */
+    public List<VotoParlamentarDTO> buscarVotosPorDeputado(Long camaraId, int limiteVotacoes) {
+        log.debug("Cruzando votos nominais recentes para o deputado {}", camaraId);
+        List<VotoParlamentarDTO> votosDoDeputado = new ArrayList<>();
+        List<VotacaoDTO> votacoes = listarVotacoesRecentes(limiteVotacoes);
+
+        for (VotacaoDTO votacao : votacoes) {
+            List<VotoRegistroDTO> votos = buscarVotosDeVotacao(votacao.getId());
+            for (VotoRegistroDTO reg : votos) {
+                if (reg.getDeputado_() != null && camaraId.equals(reg.getDeputado_().getId())) {
+                    votosDoDeputado.add(VotoParlamentarDTO.builder()
+                            .idVotacao(votacao.getId())
+                            .tituloVotacao(votacao.getDescricao())
+                            .dataHora(votacao.getDataHoraRegistro() != null ? votacao.getDataHoraRegistro() : votacao.getData())
+                            .tipoVoto(reg.getTipoVoto())
+                            .aprovacaoGeral(votacao.getAprovacao())
+                            .siglaOrgao(votacao.getSiglaOrgao())
+                            .build());
+                    break;
+                }
+            }
+        }
+
+        return votosDoDeputado;
     }
 
     /**

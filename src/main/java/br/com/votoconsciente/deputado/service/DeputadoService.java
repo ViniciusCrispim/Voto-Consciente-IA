@@ -112,9 +112,9 @@ public class DeputadoService {
     }
 
     @Cacheable(value = "votacoes", key = "#camaraId")
-    public List<VotacaoDTO> buscarVotacoes(Long camaraId) {
-        log.debug("Buscando votações do deputado {}", camaraId);
-        return camaraApiClient.buscarVotacoes(camaraId);
+    public List<br.com.votoconsciente.camara.dto.VotoParlamentarDTO> buscarVotacoes(Long camaraId) {
+        log.debug("Buscando histórico de votações nominais do deputado {}", camaraId);
+        return camaraApiClient.buscarVotosPorDeputado(camaraId, 25);
     }
 
     @Cacheable(value = "proposicoes", key = "#camaraId + '-' + #ano")
