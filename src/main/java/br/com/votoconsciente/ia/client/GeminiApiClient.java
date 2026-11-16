@@ -13,6 +13,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -24,22 +25,24 @@ import java.util.Set;
 
 /**
  * Cliente para integração com a API do Google Gemini.
- * Possui seleção automática de modelo (gemini-2.5-flash / gemini-2.0-flash / gemini-1.5-flash),
- * leitura automática da variável de ambiente (incluindo registro do Windows se o terminal não foi reiniciado)
- * e motor analítico local baseado nos dados reais da Câmara como contingência.
+ * Possui descoberta automática dos modelos disponíveis na chave do usuário (GET /v1beta/models),
+ * leitura automática da variável de ambiente no Windows e motor analítico local como contingência.
  */
 @Slf4j
 @Component
 public class GeminiApiClient {
 
+    private static final String BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
+
     @Value("${gemini.api-key:}")
     private String apiKey;
 
-    @Value("${gemini.model:gemini-2.5-flash}")
+    @Value("${gemini.model:}")
     private String configuredModel;
 
     private String cachedRegistryKey;
     private boolean registryChecked = false;
+    private List<String> cachedAvailableModels = null;
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
@@ -47,7 +50,6 @@ public class GeminiApiClient {
     public GeminiApiClient(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
         this.webClient = WebClient.builder()
-                .baseUrl("https://generativelanguage.googleapis.com/v1beta")
                 .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
                 .build();
     }
@@ -98,19 +100,84 @@ public class GeminiApiClient {
         return null;
     }
 
-    private List<String> modelosCandidatos() {
-        Set<String> modelos = new LinkedHashSet<>();
-        if (configuredModel != null && !configuredModel.isBlank()) {
-            modelos.add(configuredModel.trim());
+    /**
+     * Consulta a própria API do Google (GET /v1beta/models) para descobrir quais modelos
+     * estão ativos e suportam 'generateContent' na conta do usuário.
+     */
+    private synchronized List<String> obterModelosDisponiveis(String key) {
+        if (cachedAvailableModels != null && !cachedAvailableModels.isEmpty()) {
+            return cachedAvailableModels;
         }
-        modelos.add("gemini-2.5-flash");
-        modelos.add("gemini-2.0-flash");
-        modelos.add("gemini-1.5-flash");
-        return new ArrayList<>(modelos);
+
+        Set<String> flashModels = new LinkedHashSet<>();
+        Set<String> otherModels = new LinkedHashSet<>();
+
+        try {
+            URI listModelsUri = URI.create(BASE_URL + "/models?key=" + key);
+            String body = webClient.get()
+                    .uri(listModelsUri)
+                    .header("x-goog-api-key", key)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            if (body != null) {
+                JsonNode root = objectMapper.readTree(body);
+                JsonNode modelsNode = root.path("models");
+                if (modelsNode.isArray()) {
+                    for (JsonNode m : modelsNode) {
+                        String name = m.path("name").asText(""); // ex: "models/gemini-2.5-flash"
+                        JsonNode methods = m.path("supportedGenerationMethods");
+                        boolean supportsGenerate = false;
+                        if (methods.isArray()) {
+                            for (JsonNode method : methods) {
+                                if ("generateContent".equals(method.asText())) {
+                                    supportsGenerate = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (supportsGenerate && name.contains("gemini") && !name.contains("vision") && !name.contains("embedding") && !name.contains("imagen") && !name.contains("tts")) {
+                            String shortName = name.startsWith("models/") ? name.substring("models/".length()) : name;
+                            if (shortName.contains("flash")) {
+                                flashModels.add(shortName);
+                            } else {
+                                otherModels.add(shortName);
+                            }
+                        }
+                    }
+                }
+            }
+            List<String> descobertos = new ArrayList<>();
+            descobertos.addAll(flashModels);
+            descobertos.addAll(otherModels);
+
+            if (!descobertos.isEmpty()) {
+                log.info("Modelos Gemini descobertos automaticamente na API do Google: {}", descobertos);
+                cachedAvailableModels = descobertos;
+                return cachedAvailableModels;
+            }
+        } catch (WebClientResponseException e) {
+            log.warn("Erro HTTP {} ao listar modelos no Google AI Studio: {}",
+                    e.getStatusCode(), e.getResponseBodyAsString());
+        } catch (Exception e) {
+            log.warn("Não foi possível listar modelos dinamicamente: {}", e.getMessage());
+        }
+
+        // Lista padrão caso a listagem falhe
+        Set<String> padrao = new LinkedHashSet<>();
+        padrao.add("gemini-flash-latest");
+        padrao.add("gemini-2.5-flash");
+        padrao.add("gemini-2.0-flash");
+        if (configuredModel != null && !configuredModel.isBlank()) {
+            padrao.add(configuredModel.trim());
+        }
+        return new ArrayList<>(padrao);
     }
 
     /**
-     * Chama o Gemini tentando automaticamente os modelos disponíveis caso algum tenha sido descontinuado.
+     * Chama o Gemini usando URI direta (sem re-encoding do dois-pontos ':generateContent')
+     * e tentando os modelos descobertos na conta.
      */
     private ResultadoGemini chamarGeminiComFallbackDeModelo(String promptTexto, boolean jsonEstruturado, String key) {
         Map<String, Object> generationConfig = jsonEstruturado
@@ -135,14 +202,15 @@ public class GeminiApiClient {
             return null;
         }
 
-        for (String modeloAtual : modelosCandidatos()) {
+        List<String> candidatos = obterModelosDisponiveis(key);
+
+        for (String modeloAtual : candidatos) {
             try {
                 log.info("Consultando Google Gemini com o modelo '{}'...", modeloAtual);
+                URI targetUri = URI.create(BASE_URL + "/models/" + modeloAtual + ":generateContent?key=" + key);
+
                 String responseBody = webClient.post()
-                        .uri(uriBuilder -> uriBuilder
-                                .path("/models/" + modeloAtual + ":generateContent")
-                                .queryParam("key", key)
-                                .build())
+                        .uri(targetUri)
                         .header("x-goog-api-key", key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(requestJson)
@@ -155,13 +223,14 @@ public class GeminiApiClient {
                     JsonNode candidates = root.path("candidates");
                     if (candidates.isArray() && !candidates.isEmpty()) {
                         String text = candidates.get(0).path("content").path("parts").get(0).path("text").asText();
+                        log.info("Resposta gerada com sucesso pelo modelo Google Gemini '{}'!", modeloAtual);
                         return new ResultadoGemini(modeloAtual, text);
                     }
                 }
             } catch (WebClientResponseException e) {
-                log.warn("Modelo '{}' retornou HTTP {}: {}", modeloAtual, e.getStatusCode(), e.getResponseBodyAsString());
+                log.warn("Modelo '{}' retornou HTTP {}: {}",
+                        modeloAtual, e.getStatusCode(), e.getResponseBodyAsString());
                 if (e.getStatusCode().value() == 400 || e.getStatusCode().value() == 403) {
-                    // Erro de chave inválida ou permissão: não adianta tentar outro modelo
                     break;
                 }
             } catch (Exception e) {
@@ -366,7 +435,7 @@ public class GeminiApiClient {
                 .modoDemonstracao(true)
                 .notaMetodologia(
                         "MODO DEMONSTRAÇÃO ATIVO: Verifique no console do Spring Boot se a chave GEMINI_API_KEY " +
-                        "é uma chave válida do Google AI Studio (formato 'AIzaSy...')."
+                        "é uma chave válida do Google AI Studio."
                 )
                 .build();
     }
