@@ -46,6 +46,12 @@ apis:
     timeout-seconds: 30
     api-key: ${TRANSPARENCIA_API_KEY:}
 
+# Inteligência Artificial (Google Gemini)
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+  model: ${GEMINI_MODEL:gemini-1.5-flash}
+  timeout-seconds: 45
+
 # Sincronização (TTL em horas)
 sync:
   ttl-horas: 24

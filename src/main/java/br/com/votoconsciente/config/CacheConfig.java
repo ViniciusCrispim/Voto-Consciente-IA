@@ -30,7 +30,8 @@ public class CacheConfig {
                 "despesas",
                 "proposicoes",
                 "partidos",
-                "candidatos-tse"
+                "candidatos-tse",
+                "analise-ia"
         );
         manager.setCaffeine(defaultCaffeine());
         return manager;
