@@ -41,30 +41,42 @@ public class DeputadoService {
     // Listagem e Busca
     // ─────────────────────────────────────────────────────────
 
+    private void garantirBaseInicialCarregada() {
+        if (deputadoRepository.count() == 0) {
+            log.info("Banco local vazio — realizando sincronização inicial da bancada da Câmara...");
+            camaraSyncService.sincronizarDeputados();
+        }
+    }
+
     @Cacheable(value = "deputados", key = "'todos'")
     public List<DeputadoResponseDTO> listarTodos() {
-        List<Deputado> deputados = deputadoRepository.findAll();
-        if (deputados.isEmpty()) {
-            log.info("Banco local vazio — disparando sync inicial da Câmara");
-            camaraSyncService.sincronizarDeputados();
-            deputados = deputadoRepository.findAll();
-        }
-        return deputados.stream().map(this::toDTO).toList();
+        garantirBaseInicialCarregada();
+        return deputadoRepository.findAll().stream().map(this::toDTO).toList();
     }
 
     @Cacheable(value = "deputados", key = "#uf")
     public List<DeputadoResponseDTO> listarPorUf(String uf) {
+        garantirBaseInicialCarregada();
         return deputadoRepository.findBySiglaUfIgnoreCase(uf)
                 .stream().map(this::toDTO).toList();
     }
 
     @Cacheable(value = "deputados", key = "#partido")
     public List<DeputadoResponseDTO> listarPorPartido(String partido) {
+        garantirBaseInicialCarregada();
         return deputadoRepository.findBySiglaPartidoIgnoreCase(partido)
                 .stream().map(this::toDTO).toList();
     }
 
+    @Cacheable(value = "deputados", key = "#uf + '-' + #partido")
+    public List<DeputadoResponseDTO> listarPorUfEPartido(String uf, String partido) {
+        garantirBaseInicialCarregada();
+        return deputadoRepository.findBySiglaUfIgnoreCaseAndSiglaPartidoIgnoreCase(uf, partido)
+                .stream().map(this::toDTO).toList();
+    }
+
     public List<DeputadoResponseDTO> buscarPorNome(String nome) {
+        garantirBaseInicialCarregada();
         return deputadoRepository.buscarPorNome(nome)
                 .stream().map(this::toDTO).toList();
     }
@@ -89,16 +101,14 @@ public class DeputadoService {
             return Optional.of(toDTO(dep));
         }
 
-        // Não existe localmente → busca na API ao vivo
-        log.info("Deputado {} não encontrado localmente — buscando na API da Câmara", camaraId);
-        var detalheDTO = camaraApiClient.buscarDeputadoPorId(camaraId);
-        if (detalheDTO == null) {
+        // Não existe localmente → busca na API ao vivo da Câmara, salva no banco local e entrega imediatamente!
+        log.info("Deputado {} não encontrado localmente — buscando diretamente na API da Câmara...", camaraId);
+        Deputado salvo = camaraSyncService.sincronizarOuAtualizarDetalheDeputado(camaraId);
+        if (salvo == null) {
             return Optional.empty();
         }
 
-        // Salva localmente para próximas consultas
-        camaraSyncService.atualizarDetalheDeputadoAsync(camaraId);
-        return Optional.empty(); // Retorna vazio, próxima chamada pega do banco
+        return Optional.of(toDTO(salvo));
     }
 
     // ─────────────────────────────────────────────────────────

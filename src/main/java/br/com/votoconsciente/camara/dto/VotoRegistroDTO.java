@@ -1,5 +1,6 @@
 package br.com.votoconsciente.camara.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
 
@@ -12,6 +13,8 @@ public class VotoRegistroDTO {
 
     private String tipoVoto;
     private String dataRegistroVoto;
+
+    @JsonAlias({"deputado_", "deputado"})
     private DeputadoResumoDTO deputado_;
 
     @Data

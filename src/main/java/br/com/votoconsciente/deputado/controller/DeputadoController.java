@@ -35,9 +35,7 @@ public class DeputadoController {
         List<DeputadoResponseDTO> resultado;
 
         if (uf != null && partido != null) {
-            resultado = deputadoService.listarPorUf(uf).stream()
-                    .filter(d -> partido.equalsIgnoreCase(d.getSiglaPartido()))
-                    .toList();
+            resultado = deputadoService.listarPorUfEPartido(uf, partido);
         } else if (uf != null) {
             resultado = deputadoService.listarPorUf(uf);
         } else if (partido != null) {

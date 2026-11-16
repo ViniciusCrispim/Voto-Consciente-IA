@@ -95,28 +95,51 @@ public class CamaraSyncService {
     }
 
     /**
-     * Atualiza os detalhes de um deputado específico de forma assíncrona.
-     * Chamado quando um deputado é solicitado mas seus dados estão desatualizados.
+     * Sincroniza e salva os detalhes de um deputado imediatamente (síncrono).
+     * Usado quando o parlamentar ainda não existe no banco e uma consulta pontual é solicitada.
      */
-    @Async
     @Transactional
-    public void atualizarDetalheDeputadoAsync(Long camaraId) {
-        log.debug("Atualizando detalhes do deputado {} em background...", camaraId);
+    public Deputado sincronizarOuAtualizarDetalheDeputado(Long camaraId) {
+        log.info("Buscando e persistindo deputado {} diretamente da API da Câmara...", camaraId);
         try {
             DeputadoDetalheDTO detalhe = camaraApiClient.buscarDeputadoPorId(camaraId);
             if (detalhe == null) {
                 log.warn("Deputado {} não encontrado na API da Câmara", camaraId);
-                return;
+                return null;
             }
-            deputadoRepository.findByCamaraId(camaraId).ifPresent(dep -> {
-                enrichDeputadoComDetalhes(dep, detalhe);
-                dep.setUltimaAtualizacao(LocalDateTime.now());
-                dep.setDetalhesCarregados(true);
-                deputadoRepository.save(dep);
-            });
+
+            Deputado dep = deputadoRepository.findByCamaraId(camaraId)
+                    .orElse(new Deputado());
+
+            dep.setCamaraId(camaraId);
+            if (detalhe.getUltimoStatus() != null) {
+                var status = detalhe.getUltimoStatus();
+                dep.setNome(status.getNome());
+                dep.setSiglaPartido(status.getSiglaPartido());
+                dep.setSiglaUf(status.getSiglaUf());
+                dep.setEmail(status.getEmail());
+                dep.setUrlFoto(status.getUrlFoto());
+                dep.setIdLegislatura(status.getIdLegislatura());
+            }
+
+            enrichDeputadoComDetalhes(dep, detalhe);
+            dep.setUltimaAtualizacao(LocalDateTime.now());
+            dep.setDetalhesCarregados(true);
+
+            return deputadoRepository.save(dep);
         } catch (Exception e) {
-            log.error("Erro ao atualizar detalhes do deputado {}: {}", camaraId, e.getMessage());
+            log.error("Erro ao sincronizar deputado {}: {}", camaraId, e.getMessage(), e);
+            return null;
         }
+    }
+
+    /**
+     * Atualiza os detalhes de um deputado específico de forma assíncrona em background.
+     */
+    @Async
+    @Transactional
+    public void atualizarDetalheDeputadoAsync(Long camaraId) {
+        sincronizarOuAtualizarDetalheDeputado(camaraId);
     }
 
     private void salvarOuAtualizarDeputado(DeputadoResumoDTO dto) {

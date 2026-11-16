@@ -1,16 +1,16 @@
 package br.com.votoconsciente.camara.client;
 
 import br.com.votoconsciente.camara.dto.*;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Cliente HTTP para a API de Dados Abertos da Câmara dos Deputados.
@@ -21,9 +21,11 @@ import java.util.Map;
 public class CamaraApiClient {
 
     private final WebClient webClient;
+    private final ObjectMapper objectMapper;
 
-    public CamaraApiClient(@Qualifier("camaraWebClient") WebClient webClient) {
+    public CamaraApiClient(@Qualifier("camaraWebClient") WebClient webClient, ObjectMapper objectMapper) {
         this.webClient = webClient;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -46,8 +48,8 @@ public class CamaraApiClient {
                     .block();
 
             return response != null && response.getDados() != null ? response.getDados() : List.of();
-        } catch (WebClientResponseException e) {
-            log.error("Erro ao listar deputados na Câmara: status={}, body={}", e.getStatusCode(), e.getResponseBodyAsString());
+        } catch (Exception e) {
+            log.error("Erro ao listar deputados na Câmara: {}", e.getMessage());
             return List.of();
         }
     }
@@ -58,15 +60,18 @@ public class CamaraApiClient {
     public DeputadoDetalheDTO buscarDeputadoPorId(Long id) {
         log.debug("Buscando detalhe do deputado {} na Câmara", id);
         try {
-            Map<String, DeputadoDetalheDTO> response = webClient.get()
+            JsonNode root = webClient.get()
                     .uri("/deputados/{id}", id)
                     .retrieve()
-                    .bodyToMono(new ParameterizedTypeReference<Map<String, DeputadoDetalheDTO>>() {})
+                    .bodyToMono(JsonNode.class)
                     .block();
 
-            return response != null ? response.get("dados") : null;
-        } catch (WebClientResponseException e) {
-            log.error("Erro ao buscar deputado {}: status={}", id, e.getStatusCode());
+            if (root != null && root.has("dados")) {
+                return objectMapper.treeToValue(root.get("dados"), DeputadoDetalheDTO.class);
+            }
+            return null;
+        } catch (Exception e) {
+            log.error("Erro ao buscar deputado {}: {}", id, e.getMessage());
             return null;
         }
     }
@@ -93,8 +98,8 @@ public class CamaraApiClient {
                     .block();
 
             return response != null && response.getDados() != null ? response.getDados() : List.of();
-        } catch (WebClientResponseException e) {
-            log.error("Erro ao buscar despesas do deputado {}: status={}", id, e.getStatusCode());
+        } catch (Exception e) {
+            log.error("Erro ao buscar despesas do deputado {}: {}", id, e.getMessage());
             return List.of();
         }
     }
@@ -117,8 +122,8 @@ public class CamaraApiClient {
                     .block();
 
             return response != null && response.getDados() != null ? response.getDados() : List.of();
-        } catch (WebClientResponseException e) {
-            log.error("Erro ao listar votações da Câmara: status={}", e.getStatusCode());
+        } catch (Exception e) {
+            log.error("Erro ao listar votações da Câmara: {}", e.getMessage());
             return List.of();
         }
     }
@@ -136,9 +141,8 @@ public class CamaraApiClient {
                     .block();
 
             return response != null && response.getDados() != null ? response.getDados() : List.of();
-        } catch (WebClientResponseException e) {
-            // Muitas votações são simbólicas e não possuem votos nominais
-            log.debug("Votação {} não possui votos nominais registrados: status={}", idVotacao, e.getStatusCode());
+        } catch (Exception e) {
+            log.debug("Votação {} não possui votos nominais registrados: {}", idVotacao, e.getMessage());
             return List.of();
         }
     }
@@ -193,8 +197,8 @@ public class CamaraApiClient {
                     .block();
 
             return response != null && response.getDados() != null ? response.getDados() : List.of();
-        } catch (WebClientResponseException e) {
-            log.error("Erro ao buscar proposições do deputado {}: status={}", idDeputado, e.getStatusCode());
+        } catch (Exception e) {
+            log.error("Erro ao buscar proposições do deputado {}: {}", idDeputado, e.getMessage());
             return List.of();
         }
     }
