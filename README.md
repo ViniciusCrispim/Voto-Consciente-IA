@@ -75,9 +75,10 @@ flowchart TD
 * **Pipeline de Ingestão Agendada (CRON):** Rotina noturna com `@Scheduled(cron = "0 0 0 * * *")` que pagina e sincroniza automaticamente a bancada completa dos 513 deputados federais.
 * **Tabela de Auditoria (`SyncLog`):** Rastreabilidade total de cada ciclo de sincronização com carimbo de data/hora, quantidade de registros importados e eventuais mensagens de falha de rede.
 * **Cliente Reativo Não-Bloqueante (WebClient + Netty):** Configuração com timeouts rigorosos (`ReadTimeoutHandler`, `WriteTimeoutHandler`) e limite de buffer em memória expandido para **16MB**, evitando estouro de heap com grandes respostas JSON da Câmara.
-* **Cache em Memória com Caffeine:** Caches nomeados com políticas de expiração sob medida (`deputados`: 60m, `votacoes`: 120m, `despesas`: 120m, `analise-ia`: 120m).
-* **Engenharia de Prompt Apartidária com Structured Outputs:** Prompt blindado contra viés político, exigindo estritamente saída em JSON validado via schema.
-* **Modo Demonstração (Zero-Friction Fallback):** O projeto roda e responde análises imediatamente mesmo que o desenvolvedor ainda não tenha inserido sua chave de API da IA.
+* **Cache em Memória com Caffeine:** Caches nomeados com políticas de expiração sob medida (`deputados`: 60m, `votacoes`: 120m, `despesas`: 120m, `analise-ia`: 120m) e proteção `unless` para não cachear respostas vazias.
+* **RAG Direcionado com Roteamento Semântico e Guardrails Anti-Alucinação:** O serviço analisa semanticamente a pergunta do eleitor, aciona apenas os módulos relevantes da Câmara, pré-calcula rankings matemáticos no Java (`BigDecimal`) com as maiores notas fiscais individuais e maiores fornecedores, e aplica travas estritas para evitar alucinações.
+* **Auto-Descoberta e Memorização de Modelos LLM:** Consulta dinamicamente a API do Google para identificar os modelos ativos na conta, memoriza o modelo vencedor de menor latência e descarta automaticamente modelos depreciados (`404`).
+* **Modo Demonstração (Zero-Friction Fallback):** O projeto roda e responde análises baseadas nos dados reais da Câmara mesmo que o desenvolvedor ainda não tenha inserido sua chave de API da IA.
 
 ---
 
@@ -107,30 +108,28 @@ A documentação interativa com Swagger UI pode ser acessada em:
 **Requisição:**
 ```json
 {
-  "pergunta": "Quais foram os principais gastos da Erika Hilton em 2024 e seus projetos sobre jornada de trabalho?"
+  "pergunta": "qual foi o maior gasto da deputada?"
 }
 ```
-**Resposta:**
+**Resposta Real da API:**
 ```json
 {
   "camaraId": 220645,
   "nomeDeputado": "Erika Hilton",
   "partido": "PSOL",
   "uf": "SP",
-  "pergunta": "Quais foram os principais gastos da Erika Hilton em 2024 e seus projetos sobre jornada de trabalho?",
-  "resposta": "Com base nos registros oficiais da Câmara dos Deputados, a deputada Erika Hilton (PSOL-SP) concentrou seus gastos da Cota Parlamentar (CEAP) em 2024 em emissão de bilhetes aéreos no trecho São Paulo–Brasília, divulgação da atividade parlamentar e consultorias técnicas. Na esfera legislativa, é autora da PEC que propõe o fim da escala de trabalho 6x1 e a redução da jornada máxima semanal para 36 horas, além de proposições voltadas aos direitos trabalhistas e direitos humanos.",
+  "pergunta": "qual foi o maior gasto da deputada?",
+  "resposta": "O maior gasto individual (nota fiscal) registrado pela deputada Erika Hilton (PSOL-SP) foi de **R$ 8.700,00**, emitido pela empresa **IMPACTO SEGURANCA LTDA** (CNPJ: 68000538000130) em **10/07/2026** (documento nº 00114963), referente a serviço de segurança prestado por empresa especializada. O comprovante desta nota fiscal pode ser acessado em: https://www.camara.leg.br/cota-parlamentar/documentos/publ/3563/2026/8132012.pdf\n\n### Maiores fornecedores no acumulado:\n1. LATAM Airlines Brasil (CNPJ: 02012862000160) – R$ 38.645,51\n2. Gol Linhas Aéreas (CNPJ: 07575651000159) – R$ 29.073,81\n3. IMPACTO SEGURANCA LTDA (CNPJ: 68000538000130) – R$ 16.277,42\n4. Azul Linhas Aéreas (CNPJ: 09296295000160) – R$ 15.545,30\n5. GRAFICA E EDITORA EMBALAGEM CERTA LTDA (CNPJ: 51238617000180) – R$ 8.000,00\n\n### Totais acumulados por categoria de despesa:\n* PASSAGEM AÉREA - SIGEPA: R$ 83.264,62\n* SERVIÇO DE SEGURANÇA PRESTADO POR EMPRESA ESPECIALIZADA.: R$ 16.277,42\n* DIVULGAÇÃO DA ATIVIDADE PARLAMENTAR.: R$ 8.000,00\n* COMBUSTÍVEIS E LUBRIFICANTES.: R$ 6.835,85\n\nO total geral acumulado nas 100 notas analisadas é de R$ 114.893,55.",
   "modulosAcionados": [
     "PERFIL_CADASTRO",
-    "DESPESAS_CEAP",
-    "PROPOSICOES_LEGISLATIVAS"
+    "DESPESAS_CEAP"
   ],
   "fontesConsultadas": [
     "Perfil Oficial da Câmara: Erika Hilton (PSOL-SP) - Legislatura 57",
-    "Cota Parlamentar (CEAP): 100 notas fiscais consultadas (Ano 2024)",
-    "Proposições e Projetos de Lei: 100 matérias de autoria consultadas"
+    "Cota Parlamentar (CEAP): 100 notas fiscais auditadas"
   ],
-  "dataHora": "16/11/2026 14:45:00",
-  "modeloUtilizado": "gemini-2.5-flash",
+  "dataHora": "16/11/2026 15:49:11",
+  "modeloUtilizado": "gemini-flash-lite-latest",
   "modoDemonstracao": false
 }
 ```
@@ -273,11 +272,14 @@ br.com.votoconsciente/
 │   ├── service/DeputadoService.java # Regras de negócio e cache híbrido
 │   └── controller/DeputadoController.java # Endpoints REST de deputados
 │
-├── ia/                              # Módulo de Inteligência Artificial
-│   ├── client/GeminiApiClient.java  # Cliente da API do Google Gemini + Fallback local
-│   ├── dto/AnaliseIaResponseDTO.java # Relatório estruturado gerado pela IA
-│   ├── service/AnaliseIaService.java # Agregador de contexto legislativo e chamada à LLM
-│   └── controller/AnaliseIaController.java # Endpoint REST /analise-ia
+├── ia/                              # Módulo de Inteligência Artificial e Assistente RAG
+│   ├── client/GeminiApiClient.java  # Cliente Google Gemini com auto-descoberta de modelos + Fallback
+│   ├── dto/
+│   │   ├── AnaliseIaResponseDTO.java # Relatório estruturado gerado pela IA
+│   │   ├── PerguntaRequestDTO.java   # Payload de pergunta em linguagem natural
+│   │   └── PerguntaResponseDTO.java  # Resposta do Assistente Cívico com fontes auditadas
+│   ├── service/AnaliseIaService.java # Roteador semântico, agregador de rankings e anti-alucinação
+│   └── controller/AnaliseIaController.java # Endpoints REST (/analise-ia e /perguntar)
 │
 └── sync/                            # Auditoria de Sincronizações
     ├── entity/SyncLog.java          # Registro de auditoria das execuções
