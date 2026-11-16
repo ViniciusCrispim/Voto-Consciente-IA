@@ -66,12 +66,12 @@ public class AnaliseIaService {
     /**
      * Palavras genéricas de estrutura de pergunta que não representam um tema específico de filtro.
      */
-    private static final Set<String> STOPWORDS_PERGUNTA = Set.of(
+    private static final Set<String> STOPWORDS_PERGUNTA = new HashSet<>(List.of(
             "qual", "quais", "quanto", "quantos", "quantas", "como", "onde", "quando", "porque",
             "quem", "sobre", "para", "pelo", "pela", "pelos", "pelas", "com", "sem", "nos", "nas",
             "dos", "das", "uma", "umas", "uns", "esse", "essa", "este", "esta", "isso", "isto",
             "dele", "dela", "deles", "delas", "seu", "sua", "seus", "suas", "tem", "teve", "tiveram",
-            "foi", "foram", "ser", "esta", "estao", "sao", "deputado", "deputada", "parlamentar",
+            "foi", "foram", "ser", "estao", "sao", "deputado", "deputada", "parlamentar",
             "politico", "politica", "candidato", "candidata", "camara", "federal", "brasil", "brasileiro",
             "gasto", "gastos", "gastou", "gastar", "despesa", "despesas", "cota", "ceap", "verba",
             "dinheiro", "valor", "valores", "nota", "notas", "fiscal", "fiscais", "reembolso",
@@ -80,7 +80,7 @@ public class AnaliseIaService {
             "principal", "principais", "recente", "recentes", "ultimo", "ultimos", "ultima", "ultimas",
             "ano", "mes", "meses", "anos", "mais", "menos", "muito", "pouco", "tudo", "todos", "todas",
             "fez", "fazer", "apresentou", "criou", "total", "resumo", "geral", "fale", "diga", "mostre"
-    );
+    ));
 
     /**
      * Gera ou recupera do cache o relatório analítico de IA para o deputado especificado.
