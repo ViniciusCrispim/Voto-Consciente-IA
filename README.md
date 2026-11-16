@@ -220,8 +220,8 @@ gemini:
 
 1. **Clone o repositório:**
    ```bash
-   git clone https://github.com/SEU_USUARIO/voto-consciente-ia.git
-   cd voto-consciente-ia/Voto-Consciente-IA
+   git clone https://github.com/ViniciusCrispim/Voto-Consciente-IA.git
+   cd Voto-Consciente-IA/Voto-Consciente-IA
    ```
 
 2. **Compile e baixe as dependências:**

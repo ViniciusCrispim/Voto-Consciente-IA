@@ -17,27 +17,25 @@ public class OpenApiConfig {
     public OpenAPI openAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("Voto Consciente IA — API")
+                        .title("Voto Consciente IA — Plataforma de Auditoria e Inteligência Parlamentar")
                         .description("""
-                                API REST para consulta de informações sobre políticos brasileiros.
+                                API REST em Java 21 e Spring Boot para auditoria e análise de atuação parlamentar na Câmara dos Deputados com Inteligência Artificial (Google Gemini + RAG Direcionado).
                                 
-                                **Fontes integradas:**
-                                - 🏛️ API de Dados Abertos da Câmara dos Deputados
-                                - 🗳️ TSE DivulgaCand (candidatos eleições 2026)
-                                - 🏗️ Portal de Dados Abertos do Senado Federal
-                                - 💰 Portal da Transparência do Governo Federal
-                                
-                                Os dados são armazenados localmente com atualização automática em background.
+                                **Recursos principais:**
+                                - 🏛️ Integração com a API v2 de Dados Abertos da Câmara dos Deputados
+                                - 💰 Auditoria da Cota Parlamentar (CEAP), notas fiscais e maiores fornecedores
+                                - 📜 Consulta de Projetos de Lei (PL/PEC) e Votações Nominais em Plenário
+                                - 🤖 Assistente Cívico Conversacional com Roteamento Semântico e Guardrails Anti-Alucinação
                                 """)
                         .version("1.0.0")
                         .contact(new Contact()
-                                .name("Voto Consciente IA")
-                                .url("https://github.com/voto-consciente-ia"))
+                                .name("Vinícius Crispim")
+                                .url("https://github.com/ViniciusCrispim/Voto-Consciente-IA"))
                         .license(new License()
                                 .name("MIT")
                                 .url("https://opensource.org/licenses/MIT")))
                 .servers(List.of(
-                        new Server().url("http://localhost:8080").description("Desenvolvimento")
+                        new Server().url("http://localhost:8080").description("Servidor Local")
                 ));
     }
 }
