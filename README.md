@@ -104,27 +104,31 @@ A documentação interativa com Swagger UI pode ser acessada em:
 #### Exemplo de Resposta do Endpoint de IA (`/analise-ia`):
 ```json
 {
-  "camaraId": 204379,
-  "nome": "Acácio Favacho",
-  "partido": "MDB",
-  "uf": "AP",
-  "resumoPerfil": "O parlamentar atua com ênfase na defesa dos interesses do estado do Amapá, concentrando esforços na captação de recursos para infraestrutura e serviços básicos...",
+  "camaraId": 220645,
+  "nome": "Erika Hilton",
+  "partido": "PSOL",
+  "uf": "SP",
+  "resumoPerfil": "A parlamentar possui destacada atuação na 57ª Legislatura com liderança de bancada, concentrando sua atividade legislativa na proposição e relatoria de projetos voltados aos Direitos Humanos, legislação trabalhista (com destaque para a PEC pelo fim da escala 6x1), combate às desigualdades e proteção a minorias sociais e à comunidade LGBTQIA+.",
   "principaisBandeiras": [
-    "Desenvolvimento Regional e Infraestrutura Amazônica",
-    "Saúde Pública e Atenção Básica",
-    "Gestão e Reforma Administrativa"
+    "Direitos Humanos e Cidadania",
+    "Direitos Trabalhistas e Redução da Jornada de Trabalho (PEC 6x1)",
+    "Combate à Discriminação e Proteção a Minorias",
+    "Políticas Públicas de Habitação e Juventude",
+    "Transparência e Participação Social"
   ],
-  "analiseGastos": "O parlamentar concentra os maiores volumes da cota parlamentar em serviços de divulgação de atividade parlamentar e passagens aéreas regulares...",
-  "coerenciaAtuacao": "Observa-se alinhamento substantivo entre os projetos apresentados e as votações de bancada...",
+  "analiseGastos": "Os gastos com a cota parlamentar (CEAP) refletem principalmente deslocamentos aéreos constantes entre a base eleitoral (São Paulo) e o Congresso Nacional (Brasília), produção e divulgação de material informativo de prestação de contas do mandato e contratação de consultorias técnico-jurídicas para embasamento de proposições legislativas.",
+  "coerenciaAtuacao": "Observa-se forte consistência entre as bandeiras programáticas declaradas, os projetos de lei apresentados e os posicionamentos firmados nas votações nominais de matérias constitucionais e orçamentárias no Plenário.",
   "pontosFortes": [
-    "Regularidade de presença nas votações do Plenário",
-    "Foco legislativo aderente às necessidades da região Norte"
+    "Alta mobilização e protagonismo no debate de pautas de grande repercussão nacional",
+    "Alinhamento expressivo e coeso entre discursos públicos, proposições de leis e votos nominais",
+    "Uso regular das ferramentas legislativas para fiscalização do Poder Executivo"
   ],
   "pontosAtencao": [
-    "Acompanhar a tramitação final dos projetos arquivados nas comissões"
+    "Articulação para construção de maiorias e avanço de matérias nas comissões dominadas por bancadas conservadoras",
+    "Acompanhar a tramitação formal e relatorias de emendas parlamentares ao orçamento"
   ],
-  "scoreAtividade": 84,
-  "dataAnalise": "15/11/2026 21:40:00",
+  "scoreAtividade": 89,
+  "dataAnalise": "15/11/2026 22:00:00",
   "modeloUtilizado": "gemini-1.5-flash",
   "modoDemonstracao": false,
   "notaMetodologia": "Análise processada em tempo real pelo modelo Google Gemini via cruzamento de dados oficiais da Câmara dos Deputados."

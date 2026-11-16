@@ -18,16 +18,16 @@ import java.util.List;
 @Schema(description = "Relatório de Análise Política gerado por IA com cruzamento de dados públicos")
 public class AnaliseIaResponseDTO {
 
-    @Schema(description = "Identificador do deputado na Câmara", example = "204379")
+    @Schema(description = "Identificador do deputado na Câmara", example = "220645")
     private Long camaraId;
 
-    @Schema(description = "Nome parlamentar", example = "Acácio Favacho")
+    @Schema(description = "Nome parlamentar", example = "Erika Hilton")
     private String nome;
 
-    @Schema(description = "Partido político", example = "MDB")
+    @Schema(description = "Partido político", example = "PSOL")
     private String partido;
 
-    @Schema(description = "Estado (UF)", example = "AP")
+    @Schema(description = "Estado (UF)", example = "SP")
     private String uf;
 
     @Schema(description = "Resumo executivo do perfil e postura parlamentar em linguagem acessível")

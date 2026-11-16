@@ -37,7 +37,7 @@ public class AnaliseIaController {
                     """
     )
     public ResponseEntity<AnaliseIaResponseDTO> obterAnaliseIa(
-            @Parameter(description = "ID do deputado na Câmara dos Deputados (ex: 204379)", required = true)
+            @Parameter(description = "ID do deputado na Câmara dos Deputados (ex: 220645 - Erika Hilton)", required = true)
             @PathVariable Long camaraId
     ) {
         return analiseIaService.analisarDeputado(camaraId)
