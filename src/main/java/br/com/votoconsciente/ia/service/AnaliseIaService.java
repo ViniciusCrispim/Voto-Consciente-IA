@@ -16,6 +16,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.text.Normalizer;
 import java.text.NumberFormat;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -23,7 +24,8 @@ import java.util.regex.Pattern;
 
 /**
  * Serviço responsável por orquestrar a coleta de dados de um parlamentar,
- * realizar o roteamento semântico de perguntas e submetê-los ao modelo de IA.
+ * realizar o roteamento semântico de perguntas, auditar termos específicos
+ * contra alucinações e submetê-los ao modelo de IA.
  */
 @Slf4j
 @Service
@@ -40,7 +42,8 @@ public class AnaliseIaService {
     private static final List<String> TERMOS_DESPESAS = List.of(
             "gasto", "gastou", "gastar", "despesa", "cota", "ceap", "dinheiro", "verba",
             "reembolso", "nota", "combust", "passagem", "viagem", "avião", "aereo", "aéreo",
-            "divulga", "fornecedor", "valor", "quanto", "custo", "aluguel", "locação", "consultoria"
+            "divulga", "fornecedor", "valor", "quanto", "custo", "aluguel", "locação", "consultoria",
+            "comprou", "pagou", "pagamento", "fatura", "recibo"
     );
 
     private static final List<String> TERMOS_PROPOSICOES = List.of(
@@ -52,6 +55,31 @@ public class AnaliseIaService {
     private static final List<String> TERMOS_VOTACOES = List.of(
             "voto", "votou", "votar", "votaç", "contra", "favor", "aprov", "rejeit",
             "plenário", "plenario", "posição", "posicionamento", "absten", "obstru"
+    );
+
+    private static final List<String> TERMOS_PATRIMONIO_VIDA_PRIVADA = List.of(
+            "imovel", "imoveis", "casa", "apartamento", "mansao", "fazenda", "terreno",
+            "patrimonio", "bens", "fortuna", "riqueza", "miami", "exterior", "carro particular",
+            "estado civil", "casado", "namorad", "familia", "filho", "religiao"
+    );
+
+    /**
+     * Palavras genéricas de estrutura de pergunta que não representam um tema específico de filtro.
+     */
+    private static final Set<String> STOPWORDS_PERGUNTA = Set.of(
+            "qual", "quais", "quanto", "quantos", "quantas", "como", "onde", "quando", "porque",
+            "quem", "sobre", "para", "pelo", "pela", "pelos", "pelas", "com", "sem", "nos", "nas",
+            "dos", "das", "uma", "umas", "uns", "esse", "essa", "este", "esta", "isso", "isto",
+            "dele", "dela", "deles", "delas", "seu", "sua", "seus", "suas", "tem", "teve", "tiveram",
+            "foi", "foram", "ser", "esta", "estao", "sao", "deputado", "deputada", "parlamentar",
+            "politico", "politica", "candidato", "candidata", "camara", "federal", "brasil", "brasileiro",
+            "gasto", "gastos", "gastou", "gastar", "despesa", "despesas", "cota", "ceap", "verba",
+            "dinheiro", "valor", "valores", "nota", "notas", "fiscal", "fiscais", "reembolso",
+            "projeto", "projetos", "lei", "leis", "proposicao", "proposicoes", "proposta", "propostas",
+            "voto", "votos", "votou", "votacao", "votacoes", "plenario", "atuacao", "mandato",
+            "principal", "principais", "recente", "recentes", "ultimo", "ultimos", "ultima", "ultimas",
+            "ano", "mes", "meses", "anos", "mais", "menos", "muito", "pouco", "tudo", "todos", "todas",
+            "fez", "fazer", "apresentou", "criou", "total", "resumo", "geral", "fale", "diga", "mostre"
     );
 
     /**
@@ -69,12 +97,10 @@ public class AnaliseIaService {
 
         DeputadoResponseDTO dep = depOpt.get();
 
-        // 1. Coleta os dados complementares mais recentes
         List<DespesaDTO> despesas = camaraApiClient.buscarDespesas(camaraId, null, null);
         List<ProposicaoDTO> proposicoes = camaraApiClient.buscarProposicoes(camaraId, null);
         List<VotoParlamentarDTO> votos = camaraApiClient.buscarVotosPorDeputado(camaraId, 12);
 
-        // 2. Sumariza os dados para o contexto da IA
         Map<String, Object> resumoDados = montarResumoParaIa(dep, despesas, proposicoes, votos);
 
         try {
@@ -95,7 +121,7 @@ public class AnaliseIaService {
 
     /**
      * Responde a uma pergunta aberta em linguagem natural sobre o parlamentar
-     * utilizando Roteamento Semântico + RAG (Retrieval-Augmented Generation).
+     * utilizando Roteamento Semântico + Auditoria de Termos Específicos + RAG.
      */
     public Optional<PerguntaResponseDTO> responderPergunta(Long camaraId, String pergunta) {
         log.info("Processando pergunta para deputado {}: '{}'", camaraId, pergunta);
@@ -108,16 +134,18 @@ public class AnaliseIaService {
 
         DeputadoResponseDTO dep = depOpt.get();
         String perguntaLower = pergunta != null ? pergunta.toLowerCase(Locale.ROOT) : "";
+        String perguntaNormalizada = normalizarTexto(perguntaLower);
 
-        // 1. Extrai ano se mencionado na pergunta (ex: "em 2024")
         Integer anoFiltro = extrairAnoDaPergunta(perguntaLower);
 
-        // 2. Roteamento Semântico: identifica quais módulos precisam ser consultados
-        boolean precisaDespesas = contemAlgumTermo(perguntaLower, TERMOS_DESPESAS);
-        boolean precisaProposicoes = contemAlgumTermo(perguntaLower, TERMOS_PROPOSICOES);
-        boolean precisaVotacoes = contemAlgumTermo(perguntaLower, TERMOS_VOTACOES);
+        boolean precisaDespesas = contemAlgumTermo(perguntaLower, TERMOS_DESPESAS)
+                || contemAlgumTermo(perguntaNormalizada, TERMOS_DESPESAS);
+        boolean precisaProposicoes = contemAlgumTermo(perguntaLower, TERMOS_PROPOSICOES)
+                || contemAlgumTermo(perguntaNormalizada, TERMOS_PROPOSICOES);
+        boolean precisaVotacoes = contemAlgumTermo(perguntaLower, TERMOS_VOTACOES)
+                || contemAlgumTermo(perguntaNormalizada, TERMOS_VOTACOES);
+        boolean mencionaPatrimonioOuPrivado = contemAlgumTermo(perguntaNormalizada, TERMOS_PATRIMONIO_VIDA_PRIVADA);
 
-        // Se a pergunta for genérica (não bateu em nenhum termo específico), aciona todos os módulos
         if (!precisaDespesas && !precisaProposicoes && !precisaVotacoes) {
             precisaDespesas = true;
             precisaProposicoes = true;
@@ -137,7 +165,7 @@ public class AnaliseIaService {
         if (precisaDespesas) {
             modulosAcionados.add("DESPESAS_CEAP");
             despesas = camaraApiClient.buscarDespesas(camaraId, anoFiltro, null);
-            fontesConsultadas.add(String.format("Cota Parlamentar (CEAP): %d notas fiscais consultadas%s",
+            fontesConsultadas.add(String.format("Cota Parlamentar (CEAP): %d notas fiscais auditadas%s",
                     despesas.size(), anoFiltro != null ? " (Ano " + anoFiltro + ")" : ""));
         }
 
@@ -155,10 +183,23 @@ public class AnaliseIaService {
                     votos.size()));
         }
 
-        // 3. Monta o contexto direcionado e a síntese local baseada nos dados reais
+        // Extrai palavras-chave específicas do assunto perguntado (ex: "miami", "cirurgia", "plastica", "seguranca", "imposto")
+        List<String> termosAssunto = extrairTermosAssuntoEspecifico(pergunta, dep.getNome());
+
         Map<String, Object> contexto = montarResumoParaIa(dep, despesas, proposicoes, votos);
-        String respostaLocal = construirRespostaNaturalComDadosReais(
-                dep, pergunta, despesas, proposicoes, votos, precisaDespesas, precisaProposicoes, precisaVotacoes
+        contexto.put("termos_especificos_buscados_pelo_cidadao", termosAssunto);
+
+        String respostaLocal = construirRespostaDirecionadaComAuditoria(
+                dep,
+                pergunta,
+                termosAssunto,
+                mencionaPatrimonioOuPrivado,
+                despesas,
+                proposicoes,
+                votos,
+                precisaDespesas,
+                precisaProposicoes,
+                precisaVotacoes
         );
 
         try {
@@ -181,6 +222,40 @@ public class AnaliseIaService {
         }
     }
 
+    /**
+     * Extrai termos substantivos específicos da pergunta do usuário para auditar se existem nos registros da Câmara.
+     */
+    private List<String> extrairTermosAssuntoEspecifico(String pergunta, String nomeDeputado) {
+        if (pergunta == null || pergunta.isBlank()) return List.of();
+
+        Set<String> nomesParlamentar = new HashSet<>();
+        if (nomeDeputado != null) {
+            for (String p : normalizarTexto(nomeDeputado).split("\\s+")) {
+                if (p.length() >= 2) nomesParlamentar.add(p);
+            }
+        }
+
+        String limpo = normalizarTexto(pergunta).replaceAll("[^a-z0-9\\s]", " ");
+        List<String> termos = new ArrayList<>();
+        for (String token : limpo.split("\\s+")) {
+            if (token.length() >= 4
+                    && !STOPWORDS_PERGUNTA.contains(token)
+                    && !nomesParlamentar.contains(token)
+                    && !token.matches("20[0-9]{2}")) {
+                if (!termos.contains(token)) {
+                    termos.add(token);
+                }
+            }
+        }
+        return termos;
+    }
+
+    private String normalizarTexto(String input) {
+        if (input == null) return "";
+        String nfd = Normalizer.normalize(input.toLowerCase(Locale.ROOT), Normalizer.Form.NFD);
+        return nfd.replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
+    }
+
     private Integer extrairAnoDaPergunta(String texto) {
         Matcher matcher = ANO_PATTERN.matcher(texto);
         if (matcher.find()) {
@@ -199,12 +274,14 @@ public class AnaliseIaService {
     }
 
     /**
-     * Constrói uma resposta em linguagem natural diretamente a partir dos dados reais coletados da Câmara,
-     * usada caso a API externa da LLM não esteja acessível.
+     * Constrói uma resposta direta à pergunta do usuário, auditando se os termos específicos
+     * mencionados na pergunta realmente existem nas notas fiscais, projetos de lei ou votações.
      */
-    private String construirRespostaNaturalComDadosReais(
+    private String construirRespostaDirecionadaComAuditoria(
             DeputadoResponseDTO dep,
             String pergunta,
+            List<String> termosAssunto,
+            boolean mencionaPatrimonioOuPrivado,
             List<DespesaDTO> despesas,
             List<ProposicaoDTO> proposicoes,
             List<VotoParlamentarDTO> votos,
@@ -215,23 +292,149 @@ public class AnaliseIaService {
         NumberFormat moeda = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
         StringBuilder sb = new StringBuilder();
 
-        sb.append(String.format("Com base nos dados oficiais da Câmara dos Deputados sobre %s (%s-%s): ",
+        // Filtra registros que batem especificamente com os termos da pergunta (se houver termos específicos)
+        List<DespesaDTO> despesasRelacionadas = new ArrayList<>();
+        List<ProposicaoDTO> proposicoesRelacionadas = new ArrayList<>();
+        List<VotoParlamentarDTO> votosRelacionados = new ArrayList<>();
+
+        if (!termosAssunto.isEmpty()) {
+            for (DespesaDTO d : despesas) {
+                String alvo = normalizarTexto((d.getTipoDespesa() != null ? d.getTipoDespesa() : "") + " "
+                        + (d.getNomeFornecedor() != null ? d.getNomeFornecedor() : ""));
+                if (contemQualquerRadical(alvo, termosAssunto)) {
+                    despesasRelacionadas.add(d);
+                }
+            }
+
+            for (ProposicaoDTO p : proposicoes) {
+                String alvo = normalizarTexto((p.getSiglaTipo() != null ? p.getSiglaTipo() : "") + " "
+                        + (p.getEmenta() != null ? p.getEmenta() : ""));
+                if (contemQualquerRadical(alvo, termosAssunto)) {
+                    proposicoesRelacionadas.add(p);
+                }
+            }
+
+            for (VotoParlamentarDTO v : votos) {
+                String alvo = normalizarTexto(v.getTituloVotacao());
+                if (contemQualquerRadical(alvo, termosAssunto)) {
+                    votosRelacionados.add(v);
+                }
+            }
+        }
+
+        boolean temTermosEspecificos = !termosAssunto.isEmpty();
+        boolean encontrouAlgumaCorrespondencia = !despesasRelacionadas.isEmpty()
+                || !proposicoesRelacionadas.isEmpty()
+                || !votosRelacionados.isEmpty();
+
+        // CASO 1: O usuário perguntou sobre temas específicos (ex.: "imóveis em Miami", "cirurgia plástica")
+        // e NÃO há nenhum registro correspondente nos dados oficiais da Câmara!
+        if (temTermosEspecificos && !encontrouAlgumaCorrespondencia) {
+            sb.append(String.format(
+                    "⚠️ **Resposta Direta:** Não consta **nenhum registro** nos dados oficiais da Câmara dos Deputados sobre %s (%s-%s) relacionado aos termos perguntados (%s).",
+                    dep.getNome(), dep.getSiglaPartido(), dep.getSiglaUf(),
+                    String.join(", ", termosAssunto.stream().map(t -> "'" + t + "'").toList())
+            ));
+
+            if (mencionaPatrimonioOuPrivado) {
+                sb.append("\n\n• **Patrimônio Pessoal e Imóveis:** A API de Dados Abertos da Câmara dos Deputados não armazena informações sobre patrimônio particular, bens ou imóveis de parlamentares no Brasil ou no exterior (a declaração de bens é apresentada exclusivamente ao Tribunal Superior Eleitoral — TSE no ato de registro de candidatura).");
+            }
+
+            if (incluiDespesas) {
+                BigDecimal totalGeral = somarDespesas(despesas);
+                sb.append(String.format(
+                        "\n\n• **Auditoria da Cota Parlamentar (CEAP):** Foram verificadas as %d notas fiscais mais recentes do mandato (que somam %s) e o valor gasto com os itens questionados (%s) é de **R$ 0,00 (zero notas fiscais)**. Cabe ressaltar que o Ato da Mesa nº 43/2009 da Câmara veda o uso da Cota Parlamentar para despesas de caráter pessoal, estético ou médico.",
+                        despesas.size(), moeda.format(totalGeral),
+                        String.join("/", termosAssunto)
+                ));
+
+                List<Map.Entry<String, BigDecimal>> maiores = topCategoriasDespesa(despesas, 3);
+                if (!maiores.isEmpty()) {
+                    List<String> descCat = maiores.stream()
+                            .map(e -> e.getKey() + " (" + moeda.format(e.getValue()) + ")")
+                            .toList();
+                    sb.append(" As despesas reais registradas na cota concentram-se em: ")
+                            .append(String.join(", ", descCat)).append(".");
+                }
+            }
+
+            if (incluiProposicoes && !mencionaPatrimonioOuPrivado && !incluiDespesas) {
+                sb.append(String.format(
+                        "\n\n• **Auditoria de Projetos de Lei:** Nas %d proposições recentes consultadas de autoria/coautoria da parlamentar, nenhuma trata de %s.",
+                        proposicoes.size(), String.join(" ou ", termosAssunto)
+                ));
+            }
+
+            return sb.toString();
+        }
+
+        // CASO 2: O usuário perguntou sobre um tema específico E encontramos registros correspondentes!
+        if (temTermosEspecificos && encontrouAlgumaCorrespondencia) {
+            sb.append(String.format(
+                    "Em resposta à sua pergunta sobre **%s** nos registros oficiais de %s (%s-%s):",
+                    String.join(", ", termosAssunto), dep.getNome(), dep.getSiglaPartido(), dep.getSiglaUf()
+            ));
+
+            if (!despesasRelacionadas.isEmpty()) {
+                BigDecimal totalFiltrado = somarDespesas(despesasRelacionadas);
+                sb.append(String.format(
+                        "\n\n• **Gastos Encontrados na Cota Parlamentar:** Foram localizadas **%d notas fiscais** correspondentes, somando **%s**. Exemplos de lançamentos: ",
+                        despesasRelacionadas.size(), moeda.format(totalFiltrado)
+                ));
+                List<String> exemplos = despesasRelacionadas.stream()
+                        .limit(4)
+                        .map(d -> String.format("%s — %s (%s em %s)",
+                                d.getTipoDespesa(),
+                                d.getNomeFornecedor(),
+                                moeda.format(d.getValorDocumento() != null ? d.getValorDocumento().abs() : BigDecimal.ZERO),
+                                d.getDataDocumento() != null && d.getDataDocumento().length() >= 10
+                                        ? d.getDataDocumento().substring(0, 10) : "data s/ reg."))
+                        .toList();
+                sb.append(String.join("; ", exemplos)).append(".");
+            } else if (incluiDespesas) {
+                sb.append(String.format(
+                        "\n\n• **Gastos na Cota Parlamentar:** Nas %d notas fiscais consultadas, não há despesas registradas especificamente sob esse termo (R$ 0,00).",
+                        despesas.size()
+                ));
+            }
+
+            if (!proposicoesRelacionadas.isEmpty()) {
+                sb.append(String.format(
+                        "\n\n• **Projetos e Proposições Relacionados (%d encontrados):** ",
+                        proposicoesRelacionadas.size()
+                ));
+                List<String> textos = proposicoesRelacionadas.stream()
+                        .limit(5)
+                        .map(p -> String.format("%s %d/%d (%s)",
+                                p.getSiglaTipo(), p.getNumero(), p.getAno(),
+                                resumirTexto(p.getEmenta(), 120)))
+                        .toList();
+                sb.append(String.join("; ", textos)).append(".");
+            }
+
+            if (!votosRelacionados.isEmpty()) {
+                sb.append(String.format(
+                        "\n\n• **Votações Relacionadas (%d encontradas):** ",
+                        votosRelacionados.size()
+                ));
+                List<String> listaVotos = votosRelacionados.stream()
+                        .limit(4)
+                        .map(v -> String.format("voto '%s' em '%s' (%s)",
+                                v.getTipoVoto(), resumirTexto(v.getTituloVotacao(), 90), v.getDataHora()))
+                        .toList();
+                sb.append(String.join("; ", listaVotos)).append(".");
+            }
+
+            return sb.toString();
+        }
+
+        // CASO 3: Pergunta aberta / geral (ex.: "Quais são os principais gastos e projetos da deputada?")
+        sb.append(String.format("Com base nos dados oficiais da Câmara dos Deputados sobre %s (%s-%s):",
                 dep.getNome(), dep.getSiglaPartido(), dep.getSiglaUf()));
 
         if (incluiDespesas) {
-            BigDecimal total = BigDecimal.ZERO;
-            Map<String, BigDecimal> porCategoria = new HashMap<>();
-            for (DespesaDTO d : despesas) {
-                BigDecimal val = d.getValorDocumento() != null ? d.getValorDocumento().abs() : BigDecimal.ZERO;
-                total = total.add(val);
-                String cat = d.getTipoDespesa() != null ? d.getTipoDespesa() : "Outros";
-                porCategoria.put(cat, porCategoria.getOrDefault(cat, BigDecimal.ZERO).add(val));
-            }
-
-            List<Map.Entry<String, BigDecimal>> maiores = porCategoria.entrySet().stream()
-                    .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
-                    .limit(3)
-                    .toList();
+            BigDecimal total = somarDespesas(despesas);
+            List<Map.Entry<String, BigDecimal>> maiores = topCategoriasDespesa(despesas, 3);
 
             sb.append(String.format("\n\n• **Gastos da Cota Parlamentar (CEAP):** Nas %d notas fiscais mais recentes analisadas, o total registrado é de %s. ",
                     despesas.size(), moeda.format(total)));
@@ -271,17 +474,53 @@ public class AnaliseIaService {
                                 v.getTipoVoto(), resumirTexto(v.getTituloVotacao(), 80), v.getDataHora()))
                         .toList();
                 sb.append(String.join("; ", listaVotos)).append(".");
-            } else {
-                sb.append("\n\n• **Votações Nominais:** Nas últimas votações simbólicas/nominais consultadas na amostragem recente, não houve registro de voto nominal individualizado para este ID.");
             }
         }
 
         if (dep.getGabinete() != null && dep.getGabinete().getTelefone() != null) {
-            sb.append(String.format("\n\n• **Contato Institucional:** E-mail %s | Gabinete %s, Prédio %s, Telefone %s.",
-                    dep.getEmail(), dep.getGabinete().getSala(), dep.getGabinete().getPredio(), dep.getGabinete().getTelefone()));
+            sb.append(String.format("\n\n• **Contato Institucional:** Gabinete %s, Prédio %s, Telefone %s%s.",
+                    dep.getGabinete().getSala(),
+                    dep.getGabinete().getPredio(),
+                    dep.getGabinete().getTelefone(),
+                    dep.getEmail() != null ? " | E-mail: " + dep.getEmail() : ""));
         }
 
         return sb.toString();
+    }
+
+    private boolean contemQualquerRadical(String textoNormalizado, List<String> termos) {
+        if (textoNormalizado == null || textoNormalizado.isEmpty()) return false;
+        for (String termo : termos) {
+            // Usa radical (primeiros 5 caracteres se palavra longa) para pegar singular/plural (ex: imovel / imoveis, passagem / passagens)
+            String radical = termo.length() >= 6 ? termo.substring(0, termo.length() - 1) : termo;
+            if (textoNormalizado.contains(radical)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private BigDecimal somarDespesas(List<DespesaDTO> despesas) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (DespesaDTO d : despesas) {
+            if (d.getValorDocumento() != null) {
+                total = total.add(d.getValorDocumento().abs());
+            }
+        }
+        return total;
+    }
+
+    private List<Map.Entry<String, BigDecimal>> topCategoriasDespesa(List<DespesaDTO> despesas, int limite) {
+        Map<String, BigDecimal> porCategoria = new HashMap<>();
+        for (DespesaDTO d : despesas) {
+            BigDecimal val = d.getValorDocumento() != null ? d.getValorDocumento().abs() : BigDecimal.ZERO;
+            String cat = d.getTipoDespesa() != null ? d.getTipoDespesa() : "Outros";
+            porCategoria.put(cat, porCategoria.getOrDefault(cat, BigDecimal.ZERO).add(val));
+        }
+        return porCategoria.entrySet().stream()
+                .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
+                .limit(limite)
+                .toList();
     }
 
     private String resumirTexto(String texto, int max) {
@@ -308,13 +547,10 @@ public class AnaliseIaService {
                 "municipioNascimento", dep.getMunicipioNascimento() != null ? dep.getMunicipioNascimento() : ""
         ));
 
-        BigDecimal totalGastos = BigDecimal.ZERO;
+        BigDecimal totalGastos = somarDespesas(despesas);
         Map<String, BigDecimal> gastosPorTipo = new HashMap<>();
-
         for (DespesaDTO d : despesas) {
             BigDecimal valor = d.getValorDocumento() != null ? d.getValorDocumento().abs() : BigDecimal.ZERO;
-            totalGastos = totalGastos.add(valor);
-
             String tipo = d.getTipoDespesa() != null ? d.getTipoDespesa() : "OUTROS";
             gastosPorTipo.put(tipo, gastosPorTipo.getOrDefault(tipo, BigDecimal.ZERO).add(valor));
         }

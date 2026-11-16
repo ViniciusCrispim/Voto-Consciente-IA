@@ -9,7 +9,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -20,8 +24,9 @@ import java.util.Set;
 
 /**
  * Cliente para integração com a API do Google Gemini.
- * Possui seleção automática de modelo (gemini-2.5-flash / gemini-2.0-flash / gemini-1.5-flash)
- * e fallback analítico baseado nos dados reais da Câmara caso a API externa não esteja acessível.
+ * Possui seleção automática de modelo (gemini-2.5-flash / gemini-2.0-flash / gemini-1.5-flash),
+ * leitura automática da variável de ambiente (incluindo registro do Windows se o terminal não foi reiniciado)
+ * e motor analítico local baseado nos dados reais da Câmara como contingência.
  */
 @Slf4j
 @Component
@@ -32,6 +37,9 @@ public class GeminiApiClient {
 
     @Value("${gemini.model:gemini-2.5-flash}")
     private String configuredModel;
+
+    private String cachedRegistryKey;
+    private boolean registryChecked = false;
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
@@ -44,13 +52,48 @@ public class GeminiApiClient {
                 .build();
     }
 
-    private String resolverApiKey() {
+    private synchronized String resolverApiKey() {
         if (apiKey != null && !apiKey.trim().isEmpty() && !apiKey.contains("SUA_CHAVE")) {
             return apiKey.trim();
         }
         String envKey = System.getenv("GEMINI_API_KEY");
         if (envKey != null && !envKey.trim().isEmpty()) {
             return envKey.trim();
+        }
+        if (!registryChecked) {
+            registryChecked = true;
+            cachedRegistryKey = lerChaveDoRegistroWindows();
+        }
+        return cachedRegistryKey;
+    }
+
+    /**
+     * Caso o usuário tenha acabado de rodar 'setx GEMINI_API_KEY' e não tenha fechado o terminal,
+     * lê diretamente do registro HKCU\Environment do Windows.
+     */
+    private String lerChaveDoRegistroWindows() {
+        try {
+            Process process = new ProcessBuilder("reg", "query", "HKCU\\Environment", "/v", "GEMINI_API_KEY")
+                    .redirectErrorStream(true)
+                    .start();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.contains("GEMINI_API_KEY") && line.contains("REG_SZ")) {
+                        String[] parts = line.trim().split("\\s{2,}");
+                        if (parts.length >= 3) {
+                            String valor = parts[parts.length - 1].trim();
+                            if (!valor.isEmpty()) {
+                                log.info("Chave GEMINI_API_KEY carregada automaticamente do registro do usuário Windows.");
+                                return valor;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Não foi possível consultar HKCU\\Environment: {}", e.getMessage());
         }
         return null;
     }
@@ -72,7 +115,7 @@ public class GeminiApiClient {
     private ResultadoGemini chamarGeminiComFallbackDeModelo(String promptTexto, boolean jsonEstruturado, String key) {
         Map<String, Object> generationConfig = jsonEstruturado
                 ? Map.of("temperature", 0.2, "responseMimeType", "application/json")
-                : Map.of("temperature", 0.3);
+                : Map.of("temperature", 0.2);
 
         Map<String, Object> requestMap = Map.of(
                 "contents", List.of(
@@ -94,12 +137,13 @@ public class GeminiApiClient {
 
         for (String modeloAtual : modelosCandidatos()) {
             try {
-                log.debug("Consultando Google Gemini com o modelo '{}'...", modeloAtual);
+                log.info("Consultando Google Gemini com o modelo '{}'...", modeloAtual);
                 String responseBody = webClient.post()
                         .uri(uriBuilder -> uriBuilder
                                 .path("/models/" + modeloAtual + ":generateContent")
                                 .queryParam("key", key)
                                 .build())
+                        .header("x-goog-api-key", key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(requestJson)
                         .retrieve()
@@ -114,8 +158,14 @@ public class GeminiApiClient {
                         return new ResultadoGemini(modeloAtual, text);
                     }
                 }
+            } catch (WebClientResponseException e) {
+                log.warn("Modelo '{}' retornou HTTP {}: {}", modeloAtual, e.getStatusCode(), e.getResponseBodyAsString());
+                if (e.getStatusCode().value() == 400 || e.getStatusCode().value() == 403) {
+                    // Erro de chave inválida ou permissão: não adianta tentar outro modelo
+                    break;
+                }
             } catch (Exception e) {
-                log.warn("Tentativa com modelo '{}' falhou ({}). Tentando próximo modelo se disponível...",
+                log.warn("Tentativa com modelo '{}' falhou ({}). Tentando próximo modelo...",
                         modeloAtual, e.getMessage());
             }
         }
@@ -193,11 +243,12 @@ public class GeminiApiClient {
                     Você é o Assistente Cívico do Voto Consciente IA.
                     Responda à pergunta do cidadão sobre o(a) deputado(a) federal %s (%s-%s) de forma natural, clara, educada e direta.
                     
-                    DIRETRIZES OBRIGATÓRIAS (GUARDRAILS):
-                    1. Baseie-se ESTRITAMENTE nos dados oficiais da Câmara dos Deputados fornecidos abaixo.
-                    2. Cite números exatos (valores em R$, quantidade de notas fiscais, números de projetos de lei PL/PEC e votos nominais) sempre que estiverem presentes nos dados.
-                    3. Se a informação solicitada não constar nos registros fornecidos, informe com transparência o que consta nos dados oficiais e explique que não há registro específico sobre o ponto ausente. Nunca invente fatos ou valores.
-                    4. Mantenha tom 100%% apartidário, respeitoso e jornalístico.
+                    DIRETRIZES OBRIGATÓRIAS DE NÃO-ALUCINAÇÃO (GUARDRAILS):
+                    1. Responda DIRETAMENTE ao que o cidadão perguntou logo na primeira frase.
+                    2. Baseie-se ESTRITAMENTE nos dados oficiais da Câmara dos Deputados fornecidos abaixo.
+                    3. Se o cidadão perguntar sobre bens pessoais, imóveis, vida privada ou gastos que NÃO constam nas notas fiscais da Cota Parlamentar fornecidas, afirme explicitamente que NÃO HÁ REGISTRO desse item nos dados oficiais da Câmara (R$ 0,00 nas notas auditadas) e, em seguida, apresente quais são os gastos ou projetos reais registrados.
+                    4. Cite números exatos (valores em R$, quantidade de notas fiscais, números de projetos de lei PL/PEC e votos nominais) sempre que estiverem presentes nos dados.
+                    5. Nunca invente fatos, valores ou votações. Mantenha tom 100%% apartidário e jornalístico.
                     
                     PERGUNTA DO CIDADÃO:
                     "%s"
@@ -234,7 +285,7 @@ public class GeminiApiClient {
                 .modulosAcionados(modulosAcionados)
                 .fontesConsultadas(fontesConsultadas)
                 .dataHora(agora)
-                .modeloUtilizado("Motor Analítico Local Voto-Consciente (Dados Reais da Câmara)")
+                .modeloUtilizado("Motor Analítico Local Voto-Consciente (Auditoria Direta dos Dados Oficiais)")
                 .modoDemonstracao(true)
                 .build();
     }
@@ -314,8 +365,8 @@ public class GeminiApiClient {
                 .modeloUtilizado("Motor Analítico Local (Modo Demonstração)")
                 .modoDemonstracao(true)
                 .notaMetodologia(
-                        "MODO DEMONSTRAÇÃO ATIVO: Verifique se a chave GEMINI_API_KEY no Google AI Studio começa com 'AIza...' " +
-                        "para habilitar a geração neural ao vivo."
+                        "MODO DEMONSTRAÇÃO ATIVO: Verifique no console do Spring Boot se a chave GEMINI_API_KEY " +
+                        "é uma chave válida do Google AI Studio (formato 'AIzaSy...')."
                 )
                 .build();
     }
