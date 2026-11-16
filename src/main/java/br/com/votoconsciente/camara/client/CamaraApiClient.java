@@ -1,11 +1,11 @@
 package br.com.votoconsciente.camara.client;
 
 import br.com.votoconsciente.camara.dto.*;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -34,7 +34,7 @@ public class CamaraApiClient {
     public List<DeputadoResumoDTO> listarDeputados(Integer idLegislatura, int pagina, int itensPorPagina) {
         log.debug("Buscando deputados na Câmara: legislatura={}, pagina={}", idLegislatura, pagina);
         try {
-            ApiWrapper<DeputadoResumoDTO> response = webClient.get()
+            String body = webClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/deputados")
                             .queryParam("idLegislatura", idLegislatura)
@@ -44,8 +44,12 @@ public class CamaraApiClient {
                             .queryParam("ordenarPor", "nome")
                             .build())
                     .retrieve()
-                    .bodyToMono(new ParameterizedTypeReference<ApiWrapper<DeputadoResumoDTO>>() {})
+                    .bodyToMono(String.class)
                     .block();
+
+            if (body == null) return List.of();
+            ApiWrapper<DeputadoResumoDTO> response = objectMapper.readValue(
+                    body, new TypeReference<ApiWrapper<DeputadoResumoDTO>>() {});
 
             return response != null && response.getDados() != null ? response.getDados() : List.of();
         } catch (Exception e) {
@@ -60,12 +64,13 @@ public class CamaraApiClient {
     public DeputadoDetalheDTO buscarDeputadoPorId(Long id) {
         log.debug("Buscando detalhe do deputado {} na Câmara", id);
         try {
-            JsonNode root = webClient.get()
+            String body = webClient.get()
                     .uri("/deputados/{id}", id)
                     .retrieve()
-                    .bodyToMono(JsonNode.class)
+                    .bodyToMono(String.class)
                     .block();
 
+            JsonNode root = body != null ? objectMapper.readTree(body) : null;
             if (root != null && root.has("dados")) {
                 return objectMapper.treeToValue(root.get("dados"), DeputadoDetalheDTO.class);
             }
@@ -82,7 +87,7 @@ public class CamaraApiClient {
     public List<DespesaDTO> buscarDespesas(Long id, Integer ano, Integer mes) {
         log.debug("Buscando despesas do deputado {} (ano={}, mes={})", id, ano, mes);
         try {
-            ApiWrapper<DespesaDTO> response = webClient.get()
+            String body = webClient.get()
                     .uri(uriBuilder -> {
                         var builder = uriBuilder.path("/deputados/{id}/despesas")
                                 .queryParam("itens", 100)
@@ -94,8 +99,12 @@ public class CamaraApiClient {
                         return builder.build(id);
                     })
                     .retrieve()
-                    .bodyToMono(new ParameterizedTypeReference<ApiWrapper<DespesaDTO>>() {})
+                    .bodyToMono(String.class)
                     .block();
+
+            if (body == null) return List.of();
+            ApiWrapper<DespesaDTO> response = objectMapper.readValue(
+                    body, new TypeReference<ApiWrapper<DespesaDTO>>() {});
 
             return response != null && response.getDados() != null ? response.getDados() : List.of();
         } catch (Exception e) {
@@ -110,7 +119,7 @@ public class CamaraApiClient {
     public List<VotacaoDTO> listarVotacoesRecentes(int itens) {
         log.debug("Buscando {} votações mais recentes da Câmara", itens);
         try {
-            ApiWrapper<VotacaoDTO> response = webClient.get()
+            String body = webClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/votacoes")
                             .queryParam("itens", itens)
@@ -118,8 +127,12 @@ public class CamaraApiClient {
                             .queryParam("ordenarPor", "dataHoraRegistro")
                             .build())
                     .retrieve()
-                    .bodyToMono(new ParameterizedTypeReference<ApiWrapper<VotacaoDTO>>() {})
+                    .bodyToMono(String.class)
                     .block();
+
+            if (body == null) return List.of();
+            ApiWrapper<VotacaoDTO> response = objectMapper.readValue(
+                    body, new TypeReference<ApiWrapper<VotacaoDTO>>() {});
 
             return response != null && response.getDados() != null ? response.getDados() : List.of();
         } catch (Exception e) {
@@ -134,11 +147,15 @@ public class CamaraApiClient {
     public List<VotoRegistroDTO> buscarVotosDeVotacao(String idVotacao) {
         log.debug("Buscando votos nominais da votação {}", idVotacao);
         try {
-            ApiWrapper<VotoRegistroDTO> response = webClient.get()
+            String body = webClient.get()
                     .uri("/votacoes/{id}/votos", idVotacao)
                     .retrieve()
-                    .bodyToMono(new ParameterizedTypeReference<ApiWrapper<VotoRegistroDTO>>() {})
+                    .bodyToMono(String.class)
                     .block();
+
+            if (body == null) return List.of();
+            ApiWrapper<VotoRegistroDTO> response = objectMapper.readValue(
+                    body, new TypeReference<ApiWrapper<VotoRegistroDTO>>() {});
 
             return response != null && response.getDados() != null ? response.getDados() : List.of();
         } catch (Exception e) {
@@ -181,7 +198,7 @@ public class CamaraApiClient {
     public List<ProposicaoDTO> buscarProposicoes(Long idDeputado, Integer ano) {
         log.debug("Buscando proposições do deputado {} (ano={})", idDeputado, ano);
         try {
-            ApiWrapper<ProposicaoDTO> response = webClient.get()
+            String body = webClient.get()
                     .uri(uriBuilder -> {
                         var builder = uriBuilder.path("/proposicoes")
                                 .queryParam("idDeputadoAutor", idDeputado)
@@ -193,8 +210,12 @@ public class CamaraApiClient {
                         return builder.build();
                     })
                     .retrieve()
-                    .bodyToMono(new ParameterizedTypeReference<ApiWrapper<ProposicaoDTO>>() {})
+                    .bodyToMono(String.class)
                     .block();
+
+            if (body == null) return List.of();
+            ApiWrapper<ProposicaoDTO> response = objectMapper.readValue(
+                    body, new TypeReference<ApiWrapper<ProposicaoDTO>>() {});
 
             return response != null && response.getDados() != null ? response.getDados() : List.of();
         } catch (Exception e) {

@@ -85,7 +85,8 @@ public class DeputadoService {
     // Detalhe (estratégia híbrida)
     // ─────────────────────────────────────────────────────────
 
-    @Cacheable(value = "deputado-detalhe", key = "#camaraId")
+    // "unless" evita guardar no cache um resultado vazio (ex.: falha temporária de rede)
+    @Cacheable(value = "deputado-detalhe", key = "#camaraId", unless = "#result == null")
     public Optional<DeputadoResponseDTO> buscarPorCamaraId(Long camaraId) {
         Optional<Deputado> local = deputadoRepository.findByCamaraId(camaraId);
 
