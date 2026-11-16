@@ -96,12 +96,46 @@ A documentação interativa com Swagger UI pode ser acessada em:
 | `GET` | `/api/v1/deputados/{camaraId}/proposicoes` | Projetos de lei e proposições de sua autoria |
 | `GET` | `/api/v1/deputados/{camaraId}/votacoes` | Histórico de posicionamentos em votações nominais |
 
-### 2. Inteligência Artificial
+### 2. Inteligência Artificial & Assistente Conversacional (RAG)
 | Método | Rota | Descrição |
 |---|---|---|
-| `GET` | `/api/v1/deputados/{camaraId}/analise-ia` | **Gera o relatório analítico de IA cruzando perfil, gastos e leis** |
+| `GET` | `/api/v1/deputados/{camaraId}/analise-ia` | **Gera o relatório analítico estruturado cruzando perfil, gastos e leis** |
+| `POST` | `/api/v1/deputados/{camaraId}/perguntar` | **Assistente Cívico Conversacional: faça perguntas livres sobre o parlamentar** |
+| `GET` | `/api/v1/deputados/{camaraId}/perguntar?pergunta=...` | **Versão GET para perguntas rápidas direto pela URL ou Swagger** |
 
-#### Exemplo de Resposta do Endpoint de IA (`/analise-ia`):
+#### Exemplo 1: Pergunta em Linguagem Natural (`/api/v1/deputados/220645/perguntar`):
+**Requisição:**
+```json
+{
+  "pergunta": "Quais foram os principais gastos da Erika Hilton em 2024 e seus projetos sobre jornada de trabalho?"
+}
+```
+**Resposta:**
+```json
+{
+  "camaraId": 220645,
+  "nomeDeputado": "Erika Hilton",
+  "partido": "PSOL",
+  "uf": "SP",
+  "pergunta": "Quais foram os principais gastos da Erika Hilton em 2024 e seus projetos sobre jornada de trabalho?",
+  "resposta": "Com base nos registros oficiais da Câmara dos Deputados, a deputada Erika Hilton (PSOL-SP) concentrou seus gastos da Cota Parlamentar (CEAP) em 2024 em emissão de bilhetes aéreos no trecho São Paulo–Brasília, divulgação da atividade parlamentar e consultorias técnicas. Na esfera legislativa, é autora da PEC que propõe o fim da escala de trabalho 6x1 e a redução da jornada máxima semanal para 36 horas, além de proposições voltadas aos direitos trabalhistas e direitos humanos.",
+  "modulosAcionados": [
+    "PERFIL_CADASTRO",
+    "DESPESAS_CEAP",
+    "PROPOSICOES_LEGISLATIVAS"
+  ],
+  "fontesConsultadas": [
+    "Perfil Oficial da Câmara: Erika Hilton (PSOL-SP) - Legislatura 57",
+    "Cota Parlamentar (CEAP): 100 notas fiscais consultadas (Ano 2024)",
+    "Proposições e Projetos de Lei: 100 matérias de autoria consultadas"
+  ],
+  "dataHora": "16/11/2026 14:45:00",
+  "modeloUtilizado": "gemini-2.5-flash",
+  "modoDemonstracao": false
+}
+```
+
+#### Exemplo 2: Relatório Completo Estruturado (`/api/v1/deputados/220645/analise-ia`):
 ```json
 {
   "camaraId": 220645,
