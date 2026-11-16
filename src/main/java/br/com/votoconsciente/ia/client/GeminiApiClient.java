@@ -120,10 +120,10 @@ public class GeminiApiClient {
 
         // 2. Modelos prioritários atuais recomendados pelo Google AI Studio
         ordenados.add("gemini-3.8-flash");
-        ordenados.add("gemini-flash-lite-latest");
         ordenados.add("gemini-3.7-flash");
-        ordenados.add("gemini-3.6-flash");
         ordenados.add("gemini-3.5-flash");
+        ordenados.add("gemini-flash-lite-latest");
+        ordenados.add("gemini-3.6-flash");
         ordenados.add("gemini-3.5-flash-lite");
 
         if (configuredModel != null && !configuredModel.isBlank()) {
@@ -325,15 +325,19 @@ public class GeminiApiClient {
 
         if (key != null) {
             String promptConversacional = """
-                    Você é o Assistente Cívico do Voto Consciente IA.
-                    Responda à pergunta do cidadão sobre o(a) deputado(a) federal %s (%s-%s) de forma natural, clara, educada e direta.
+                    Você é o Assistente Cívico do Voto Consciente IA, especialista em auditoria de dados parlamentares.
+                    Responda à pergunta do cidadão sobre o(a) deputado(a) federal %s (%s-%s) de forma natural, específica, detalhada e direta.
                     
-                    DIRETRIZES OBRIGATÓRIAS DE NÃO-ALUCINAÇÃO (GUARDRAILS):
-                    1. Responda DIRETAMENTE ao que o cidadão perguntou logo na primeira frase.
-                    2. Baseie-se ESTRITAMENTE nos dados oficiais da Câmara dos Deputados fornecidos abaixo.
-                    3. Se o cidadão perguntar sobre bens pessoais, imóveis, vida privada ou gastos que NÃO constam nas notas fiscais da Cota Parlamentar fornecidas, afirme explicitamente que NÃO HÁ REGISTRO desse item nos dados oficiais da Câmara (R$ 0,00 nas notas auditadas) e, em seguida, apresente quais são os gastos ou projetos reais registrados.
-                    4. Cite números exatos (valores em R$, quantidade de notas fiscais, números de projetos de lei PL/PEC e votos nominais) sempre que estiverem presentes nos dados.
-                    5. Nunca invente fatos, valores ou votações. Mantenha tom 100%% apartidário e jornalístico.
+                    DIRETRIZES DE QUALIDADE E PRECISÃO:
+                    1. Vá direto ao ponto na primeira frase, respondendo exatamente ao que foi perguntado com riqueza de detalhes.
+                    2. Quando a pergunta for sobre gastos ou maiores despesas, apresente:
+                       - A **maior nota fiscal individual** (`maiores_notas_fiscais_individuais_por_valor`): cite o valor exato em R$, o nome da empresa/fornecedor, o CNPJ/CPF, a data, o tipo de serviço e o link do comprovante se disponível;
+                       - Os **maiores fornecedores no acumulado** (`maiores_fornecedores_acumulado`): quais empresas mais receberam recursos no total;
+                       - As **categorias com maior volume total** (`totais_acumulados_por_categoria`).
+                    3. Quando a pergunta for sobre projetos de lei ou atuação, cite o código exato das matérias (ex: PL 1234/2026) e explique em linguagem simples o que cada projeto propõe a partir da ementa.
+                    4. Baseie-se ESTRITAMENTE nos dados oficiais fornecidos abaixo (nunca invente valores ou fatos).
+                    5. SOMENTE se o cidadão perguntar sobre um item que NÃO existe nos dados (ex: imóveis pessoais, gastos médicos/estéticos, etc.), informe que não consta registro oficial (R$ 0,00). Se a pergunta for sobre dados que existem no JSON abaixo, NÃO adicione avisos genéricos sobre patrimônio pessoal.
+                    6. Mantenha tom 100%% apartidário e analítico.
                     
                     PERGUNTA DO CIDADÃO:
                     "%s"

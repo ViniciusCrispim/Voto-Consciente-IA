@@ -549,11 +549,50 @@ public class AnaliseIaService {
 
         BigDecimal totalGastos = somarDespesas(despesas);
         Map<String, BigDecimal> gastosPorTipo = new HashMap<>();
+        Map<String, BigDecimal> gastosPorFornecedor = new HashMap<>();
+
         for (DespesaDTO d : despesas) {
             BigDecimal valor = d.getValorDocumento() != null ? d.getValorDocumento().abs() : BigDecimal.ZERO;
             String tipo = d.getTipoDespesa() != null ? d.getTipoDespesa() : "OUTROS";
             gastosPorTipo.put(tipo, gastosPorTipo.getOrDefault(tipo, BigDecimal.ZERO).add(valor));
+
+            String fornecedor = d.getNomeFornecedor() != null ? d.getNomeFornecedor() : "NÃO INFORMADO";
+            if (d.getCnpjCpfFornecedor() != null && !d.getCnpjCpfFornecedor().isBlank()) {
+                fornecedor = fornecedor + " (CNPJ/CPF: " + d.getCnpjCpfFornecedor() + ")";
+            }
+            gastosPorFornecedor.put(fornecedor, gastosPorFornecedor.getOrDefault(fornecedor, BigDecimal.ZERO).add(valor));
         }
+
+        // Top 10 notas fiscais mais caras (maior gasto individual)
+        List<Map<String, Object>> maioresNotasIndividuais = despesas.stream()
+                .sorted((a, b) -> {
+                    BigDecimal va = a.getValorDocumento() != null ? a.getValorDocumento().abs() : BigDecimal.ZERO;
+                    BigDecimal vb = b.getValorDocumento() != null ? b.getValorDocumento().abs() : BigDecimal.ZERO;
+                    return vb.compareTo(va);
+                })
+                .limit(10)
+                .map(d -> {
+                    Map<String, Object> nota = new LinkedHashMap<>();
+                    nota.put("valor_reais", d.getValorDocumento() != null ? d.getValorDocumento().abs() : BigDecimal.ZERO);
+                    nota.put("tipo_despesa", d.getTipoDespesa() != null ? d.getTipoDespesa() : "");
+                    nota.put("fornecedor", d.getNomeFornecedor() != null ? d.getNomeFornecedor() : "");
+                    nota.put("cnpj_cpf_fornecedor", d.getCnpjCpfFornecedor() != null ? d.getCnpjCpfFornecedor() : "");
+                    nota.put("data_documento", d.getDataDocumento() != null ? d.getDataDocumento() : "");
+                    nota.put("numero_documento", d.getNumDocumento() != null ? d.getNumDocumento() : "");
+                    nota.put("url_comprovante", d.getUrlDocumento() != null ? d.getUrlDocumento() : "");
+                    return nota;
+                })
+                .toList();
+
+        // Top 10 fornecedores que mais receberam verba no acumulado
+        List<Map<String, Object>> maioresFornecedores = gastosPorFornecedor.entrySet().stream()
+                .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
+                .limit(10)
+                .map(e -> Map.<String, Object>of(
+                        "fornecedor", e.getKey(),
+                        "total_recebido_reais", e.getValue()
+                ))
+                .toList();
 
         List<Map<String, Object>> notasRecentes = despesas.stream()
                 .limit(10)
@@ -565,12 +604,15 @@ public class AnaliseIaService {
                 ))
                 .toList();
 
-        contexto.put("gastos_cota_parlamentar", Map.of(
-                "total_registrado_amostra_reais", totalGastos,
-                "quantidade_notas_analisadas", despesas.size(),
-                "totais_por_categoria", gastosPorTipo,
-                "ultimas_notas_fiscais", notasRecentes
-        ));
+        Map<String, Object> blocoGastos = new LinkedHashMap<>();
+        blocoGastos.put("total_geral_reais", totalGastos);
+        blocoGastos.put("quantidade_notas_analisadas", despesas.size());
+        blocoGastos.put("maiores_notas_fiscais_individuais_por_valor", maioresNotasIndividuais);
+        blocoGastos.put("maiores_fornecedores_acumulado", maioresFornecedores);
+        blocoGastos.put("totais_acumulados_por_categoria", gastosPorTipo);
+        blocoGastos.put("ultimas_notas_cronologicas", notasRecentes);
+
+        contexto.put("gastos_cota_parlamentar", blocoGastos);
 
         List<Map<String, Object>> listaProposicoes = proposicoes.stream()
                 .limit(15)
