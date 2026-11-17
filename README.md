@@ -1,8 +1,10 @@
 # 🇧🇷 Voto Consciente IA — Plataforma de Auditoria e Inteligência Parlamentar
 
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg?style=flat-square&logo=openjdk)](https://openjdk.org/)
-[![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.4%2B-green.svg?style=flat-square&logo=springboot)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.1-green.svg?style=flat-square&logo=springboot)](https://spring.io/projects/spring-boot)
 [![Google Gemini](https://img.shields.io/badge/AI-Google_Gemini-blue.svg?style=flat-square&logo=google)](https://aistudio.google.com/)
+[![Docker](https://img.shields.io/badge/Docker-Compose_Ready-2496ED.svg?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Swagger / OpenAPI](https://img.shields.io/badge/API_Docs-Swagger_OpenAPI_3.0-brightgreen.svg?style=flat-square&logo=swagger)](http://localhost:8080/swagger-ui.html)
 
@@ -78,6 +80,7 @@ flowchart TD
 * **Cache em Memória com Caffeine:** Caches nomeados com políticas de expiração sob medida (`deputados`: 60m, `votacoes`: 120m, `despesas`: 120m, `analise-ia`: 120m) e proteção `unless` para não cachear respostas vazias.
 * **RAG Direcionado com Roteamento Semântico e Guardrails Anti-Alucinação:** O serviço analisa semanticamente a pergunta do eleitor, aciona apenas os módulos relevantes da Câmara, pré-calcula rankings matemáticos no Java (`BigDecimal`) com as maiores notas fiscais individuais e maiores fornecedores, e aplica travas estritas para evitar alucinações.
 * **Auto-Descoberta e Memorização de Modelos LLM:** Consulta dinamicamente a API do Google para identificar os modelos ativos na conta, memoriza o modelo vencedor de menor latência e descarta automaticamente modelos depreciados (`404`).
+* **Containerização com Multi-Stage Build e Docker Compose:** Imagem otimizada em duas etapas (`eclipse-temurin:21-jdk-alpine` para build e `21-jre-alpine` com usuário não-root para execução) orquestrada com **PostgreSQL 16** e *healthcheck* de prontidão.
 * **Modo Demonstração (Zero-Friction Fallback):** O projeto roda e responde análises baseadas nos dados reais da Câmara mesmo que o desenvolvedor ainda não tenha inserido sua chave de API da IA.
 
 ---
@@ -212,11 +215,39 @@ gemini:
 
 ## 💻 Como Executar o Projeto
 
-### Pré-requisitos
+Você pode rodar a aplicação de duas formas: **via Docker Compose** (com banco PostgreSQL 16 persistente, sem precisar instalar o Java 21 na máquina) ou **localmente via Maven** (com banco H2 em memória).
+
+### Opção A: Executando com Docker Compose (Recomendado)
+
+1. **Clone o repositório:**
+   ```bash
+   git clone https://github.com/ViniciusCrispim/Voto-Consciente-IA.git
+   cd Voto-Consciente-IA/Voto-Consciente-IA
+   ```
+
+2. **Configure sua chave do Gemini (opcional):**
+   Copie o arquivo `.env.example` para `.env` e insira sua chave gratuita do Google AI Studio:
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Suba os containers (API + PostgreSQL 16):**
+   ```bash
+   docker compose up --build -d
+   ```
+
+4. **Acesse no navegador:**
+   * **Swagger UI:** [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
+
+---
+
+### Opção B: Executando Localmente com Maven (Banco H2 em Memória)
+
+#### Pré-requisitos
 * **Java 21** instalado (`java -version`)
 * **Git** instalado
 
-### Passo a Passo
+#### Passo a Passo
 
 1. **Clone o repositório:**
    ```bash
@@ -295,9 +326,10 @@ br.com.votoconsciente/
 * **Framework:** Spring Boot 3.4+
 * **Comunicação Reativa:** Spring WebFlux (`WebClient`) com Reactor Netty
 * **Persistência de Dados:** Spring Data JPA / Hibernate
-* **Bancos de Dados:** H2 Database (desenvolvimento em memória) e PostgreSQL (produção)
+* **Bancos de Dados:** PostgreSQL 16 (containerizado) e H2 Database (desenvolvimento em memória)
+* **Containerização & DevOps:** Docker (Multi-Stage Build em Alpine Linux) e Docker Compose
 * **Cache em Memória:** Caffeine Cache Manager
-* **Inteligência Artificial:** Google Gemini (1.5 Flash / 2.0 Flash via Google AI Studio)
+* **Inteligência Artificial:** Google Gemini (`gemini-3.8-flash` / `gemini-flash-lite-latest` via Google AI Studio)
 * **Documentação de API:** SpringDoc OpenAPI 3.0 / Swagger UI
 * **Produtividade:** Lombok
 
